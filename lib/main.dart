@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'content_provider.dart' as content;
 
@@ -40,7 +38,12 @@ class ContentState extends State<ContentPage> {
       SliverGrid(
         delegate: SliverChildBuilderDelegate((context, index) {
           final item = content.ItemProvider().getContext("home").getItem(index);
-          return ContentPageItem(item: item);
+          return FutureBuilder<content.Item>(
+            builder: ((context, snapshot) => (snapshot.hasData)
+                ? ContentPageItem(item: snapshot.requireData)
+                : const CircularProgressIndicator()),
+            future: item,
+          );
         }),
         gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
             mainAxisExtent: size.height, maxCrossAxisExtent: size.width),
@@ -49,8 +52,9 @@ class ContentState extends State<ContentPage> {
   }
 }
 
-void main() {
+void main() async {
   var preferences = Preferences(Size(150, 150));
+  content.ItemProvider().getContext("home").preload(0, 10);
   runApp(MaterialApp(
     title: "Whatever cloud",
     home: Scaffold(
