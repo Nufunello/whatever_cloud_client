@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'content_provider.dart' as content;
 
 class Size {
   late final double height;
@@ -19,6 +22,15 @@ class ContentPage extends StatefulWidget {
   State<StatefulWidget> createState() => ContentState();
 }
 
+class ContentPageItem extends StatelessWidget {
+  final content.Item item;
+  const ContentPageItem({Key? key, required this.item}) : super(key: key);
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [Expanded(child: item.image), Text(item.title)]);
+  }
+}
+
 class ContentState extends State<ContentPage> {
   @override
   Widget build(BuildContext context) {
@@ -27,7 +39,8 @@ class ContentState extends State<ContentPage> {
         child: CustomScrollView(slivers: [
       SliverGrid(
         delegate: SliverChildBuilderDelegate((context, index) {
-          return Text('$index');
+          final item = content.ItemProvider().getContext("home").getItem(index);
+          return ContentPageItem(item: item);
         }),
         gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
             mainAxisExtent: size.height, maxCrossAxisExtent: size.width),
