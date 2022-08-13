@@ -47,13 +47,9 @@ class ContentState extends State<ContentPage> {
 
   FutureBuilder<content.Item> item(Future<content.Item> future) {
     return FutureBuilder<content.Item>(
-      builder: ((context, snapshot) {
-        if (snapshot.hasData) {
-          return ContentPageItem(item: snapshot.requireData);
-        } else {
-          return const CircularProgressIndicator();
-        }
-      }),
+      builder: ((context, snapshot) => snapshot.hasData
+          ? ContentPageItem(item: snapshot.requireData)
+          : const CircularProgressIndicator()),
       future: future,
     );
   }

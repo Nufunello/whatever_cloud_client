@@ -16,6 +16,17 @@ class Item {
 
 class ContextItem extends ChangeNotifier {}
 
+class ContextQueue {
+  ContextQueue(Channel channel, Exchange exchange, String name,
+      String routingKey, Function(AmqpMessage message) listener) {
+    channel
+        .queue(name, durable: false)
+        .then((queue) => queue.bind(exchange, routingKey))
+        .then((queue) => (queue..purge()).consume())
+        .then((consumer) => consumer.listen(listener));
+  }
+}
+
 class Context {
   static const _exchange = 'amq.direct';
   static const ExchangeType _type = ExchangeType.DIRECT;
@@ -65,21 +76,20 @@ class Context {
     _countController.add(message.payloadAsJson['Size']);
   }
 
+  Future<Consumer> _init_queue(String name, String routingKey, Channel channel,
+      Future<Exchange> exchange) async {
+    final queue = await channel.queue(name, durable: false);
+    queue.bind(await exchange, routingKey);
+    return queue.consume();
+  }
+
   Context({required this.client}) {
-    client
-        .channel()
-        .then((channel) => channel.exchange(_exchange, _type, durable: true))
-        .then((exchange) {
-      exchange.bindQueueConsumer('home_content',
-          ['whatever_cloud/client/home/content']).then((consumer) {
-        _prepareConsumer(consumer);
-        consumer.listen(_content_listener);
-      });
-      exchange.bindQueueConsumer(
-          'home_size', ['whatever_cloud/client/home/size']).then((consumer) {
-        _prepareConsumer(consumer);
-        consumer.listen(_size_listener);
-      });
+    client.channel().then((channel) async {
+      final exchange = channel.exchange(_exchange, _type, durable: true);
+      ContextQueue(channel, await exchange, 'home_content',
+          'whatever_cloud/client/home/content', _content_listener);
+      ContextQueue(channel, await exchange, 'home_size',
+          'whatever_cloud/client/home/size', _size_listener);
     });
     _requestSize();
   }
