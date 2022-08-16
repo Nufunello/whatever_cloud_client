@@ -87,32 +87,34 @@ class UploadFileDialog extends StatefulWidget {
 }
 
 class UploadFileDialogState extends State<UploadFileDialog> {
-  PlatformFile? _file;
+  var _files = <PlatformFile>[];
 
   void _sendFile() {
-    PlatformFile file = _file!;
-    var value =
-        MultipartFile.fromBytes('file', file.bytes!, filename: file.name);
     var request = MultipartRequest("POST",
         Uri(scheme: 'https', host: 'localhost', port: 44346, path: 'file'));
-    request.files.add(value);
+    for (var file in _files) {
+      var value =
+          MultipartFile.fromBytes('files', file.bytes!, filename: file.name);
+      request.files.add(value);
+    }
     request.send();
   }
 
   bool _isFileSelected() {
-    return !(_file == null || _file!.name.isEmpty);
+    return _files.isNotEmpty;
   }
 
   Widget _topPart() {
     return GestureDetector(
-        child:
-            Text(_isFileSelected() ? _file!.name : 'Select a file to upload'),
+        child: _isFileSelected()
+            ? Column(children: _files.map((e) => Text(e.name)).toList())
+            : const Text('Select a file to upload'),
         onTap: () => FilePicker.platform
-            .pickFiles(allowMultiple: false, withData: true)
+            .pickFiles(allowMultiple: true, withData: true)
             .then((value) => {
                   if (value != null && value.count != 0)
                     {
-                      setState(() => {(_file = value.files.first)})
+                      setState(() => {(_files = value.files)})
                     }
                 }));
   }
