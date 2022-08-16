@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:http/http.dart';
+import 'package:file_picker/file_picker.dart';
 
 import 'package:flutter/material.dart';
 import 'content_provider.dart' as content;
@@ -64,12 +66,103 @@ class ContentState extends State<ContentPage> {
         child: CustomScrollView(slivers: [
       SliverGrid(
         delegate: SliverChildBuilderDelegate(
-            childCount: _count,
-            (context, index) => item(_contentContext!.getItem(index))),
+            childCount: 1,
+            (context, index) => ContentPageItem(
+                item: content.Item(
+                    image: Image.network(
+                        'https://localhost:44346/file?file=owl.jpg'),
+                    title: "OWl"))), //item(_contentContext!.getItem(index))),
         gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
             mainAxisExtent: size.height, maxCrossAxisExtent: size.width),
       )
     ]));
+  }
+}
+
+class UploadFileDialog extends StatefulWidget {
+  const UploadFileDialog({Key? key}) : super(key: key);
+
+  @override
+  State<StatefulWidget> createState() => UploadFileDialogState();
+}
+
+class UploadFileDialogState extends State<UploadFileDialog> {
+  PlatformFile? _file;
+
+  void _sendFile() {
+    PlatformFile file = _file!;
+    var value =
+        MultipartFile.fromBytes('file', file.bytes!, filename: file.name);
+    var request = MultipartRequest("POST",
+        Uri(scheme: 'https', host: 'localhost', port: 44346, path: 'file'));
+    request.files.add(value);
+    request.send();
+  }
+
+  bool _isFileSelected() {
+    return !(_file == null || _file!.name.isEmpty);
+  }
+
+  Widget _topPart() {
+    return GestureDetector(
+        child:
+            Text(_isFileSelected() ? _file!.name : 'Select a file to upload'),
+        onTap: () => FilePicker.platform
+            .pickFiles(allowMultiple: false, withData: true)
+            .then((value) => {
+                  if (value != null && value.count != 0)
+                    {
+                      setState(() => {(_file = value.files.first)})
+                    }
+                }));
+  }
+
+  Widget _bottomPart() {
+    return FloatingActionButton(
+        onPressed: _isFileSelected() ? _sendFile : null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: Scaffold(
+            backgroundColor: Colors.blueGrey,
+            body: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                Expanded(child: _topPart()),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [_bottomPart()],
+                ),
+              ],
+            )));
+  }
+}
+
+class Scaff extends StatelessWidget {
+  final Preferences preferences;
+  final StreamController<content.Context> contextController;
+  const Scaff(
+      {Key? key, required this.preferences, required this.contextController})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+            child: ContentPage(
+                preferences: preferences, context: contextController.stream)),
+        floatingActionButton: FloatingActionButton(
+            onPressed: () => showDialog(
+                context: context,
+                builder: (context) => const UploadFileDialog())));
   }
 }
 
@@ -80,10 +173,6 @@ void main() async {
       .add(content.ItemProvider().getContext("home")..preload(0, 10));
   runApp(MaterialApp(
     title: "Whatever cloud",
-    home: Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(
-            child: ContentPage(
-                preferences: preferences, context: contextController.stream))),
+    home: Scaff(preferences: preferences, contextController: contextController),
   ));
 }
