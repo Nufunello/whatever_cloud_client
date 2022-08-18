@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 
 import 'package:flutter/material.dart';
 import 'content_provider.dart' as content;
+import 'dart:io' show Platform;
 
 class Size {
   late final double height;
@@ -70,7 +71,7 @@ class ContentState extends State<ContentPage> {
             (context, index) => ContentPageItem(
                 item: content.Item(
                     image: Image.network(
-                        'https://localhost:44346/file?file=owl.jpg'),
+                        '$protocol://$ip:$port/file?path=owl.jpg'),
                     title: "OWl"))), //item(_contentContext!.getItem(index))),
         gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
             mainAxisExtent: size.height, maxCrossAxisExtent: size.width),
@@ -79,8 +80,13 @@ class ContentState extends State<ContentPage> {
   }
 }
 
+String ip = Platform.isAndroid ? '10.0.2.2' : 'localhost';
+const int port = 31136;
+const String protocol = 'http';
+
 class UploadFileDialog extends StatefulWidget {
-  const UploadFileDialog({Key? key}) : super(key: key);
+  final Preferences preferences;
+  UploadFileDialog({required this.preferences, Key? key}) : super(key: key);
 
   @override
   State<StatefulWidget> createState() => UploadFileDialogState();
@@ -90,8 +96,8 @@ class UploadFileDialogState extends State<UploadFileDialog> {
   var _files = <PlatformFile>[];
 
   void _sendFile() {
-    var request = MultipartRequest("POST",
-        Uri(scheme: 'https', host: 'localhost', port: 44346, path: 'file'));
+    var request = MultipartRequest(
+        "POST", Uri(scheme: protocol, host: ip, port: port, path: 'file'));
     for (var file in _files) {
       var value =
           MultipartFile.fromBytes('files', file.bytes!, filename: file.name);
@@ -104,24 +110,46 @@ class UploadFileDialogState extends State<UploadFileDialog> {
     return _files.isNotEmpty;
   }
 
+  Widget _selectFileButton() {
+    return TextButton(
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.all(16.0),
+        primary: Colors.white,
+        textStyle: const TextStyle(fontSize: 20),
+      ),
+      onPressed: () => FilePicker.platform
+          .pickFiles(allowMultiple: true, withData: true)
+          .then((value) => {
+                if (value != null && value.count != 0)
+                  {
+                    setState(() => {(_files = value.files)})
+                  }
+              }),
+      child: const Text('Select files to upload'),
+    );
+  }
+
   Widget _topPart() {
-    return GestureDetector(
-        child: _isFileSelected()
-            ? Column(children: _files.map((e) => Text(e.name)).toList())
-            : const Text('Select a file to upload'),
-        onTap: () => FilePicker.platform
-            .pickFiles(allowMultiple: true, withData: true)
-            .then((value) => {
-                  if (value != null && value.count != 0)
-                    {
-                      setState(() => {(_files = value.files)})
-                    }
-                }));
+    return CustomScrollView(
+        shrinkWrap: true,
+        scrollDirection: Axis.vertical,
+        slivers: [
+          SliverFixedExtentList(
+            delegate: SliverChildListDelegate(_files
+                .map<Widget>((file) => ContentPageItem(
+                    item: content.Item(
+                        image: Image.memory(file.bytes!), title: file.name)))
+                .toList()
+              ..insert(0, _selectFileButton())),
+            itemExtent: widget.preferences.itemSize.width,
+          )
+        ]);
   }
 
   Widget _bottomPart() {
     return FloatingActionButton(
-        onPressed: _isFileSelected() ? _sendFile : null);
+        onPressed: _isFileSelected() ? _sendFile : null,
+        child: const Icon(Icons.upload_file));
   }
 
   @override
@@ -136,13 +164,7 @@ class UploadFileDialogState extends State<UploadFileDialog> {
             backgroundColor: Colors.blueGrey,
             body: Column(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                Expanded(child: _topPart()),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [_bottomPart()],
-                ),
-              ],
+              children: [Expanded(child: _topPart()), _bottomPart()],
             )));
   }
 }
@@ -164,7 +186,9 @@ class Scaff extends StatelessWidget {
         floatingActionButton: FloatingActionButton(
             onPressed: () => showDialog(
                 context: context,
-                builder: (context) => const UploadFileDialog())));
+                builder: (context) => UploadFileDialog(
+                      preferences: preferences,
+                    ))));
   }
 }
 
