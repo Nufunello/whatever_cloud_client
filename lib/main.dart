@@ -28,12 +28,25 @@ class ContentPage extends StatefulWidget {
   State<StatefulWidget> createState() => ContentState();
 }
 
+class ImageTitleItem extends StatelessWidget {
+  final Image image;
+  final String title;
+  const ImageTitleItem({Key? key, required this.image, required this.title})
+      : super(key: key);
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [Expanded(child: image), Text(title)]);
+  }
+}
+
 class ContentPageItem extends StatelessWidget {
   final content.Item item;
   const ContentPageItem({Key? key, required this.item}) : super(key: key);
   @override
   Widget build(BuildContext context) {
-    return Column(children: [Expanded(child: item.image), Text(item.title)]);
+    return ImageTitleItem(
+        image: Image.network('$protocol://$ip:$port/file?path=${item.icon}'),
+        title: item.title);
   }
 }
 
@@ -41,9 +54,9 @@ class ContentState extends State<ContentPage> {
   content.Context? _contentContext;
   int _count = 0;
 
-  void _bind_context(content.Context event) {
+  void _bindContext(content.Context event) {
     setState(() => _contentContext = event);
-    event.count.listen((event) {
+    event.size.listen((event) {
       setState(() => _count = event);
     });
   }
@@ -60,19 +73,15 @@ class ContentState extends State<ContentPage> {
   @override
   Widget build(BuildContext context) {
     if (_contentContext == null) {
-      widget.context.listen(_bind_context);
+      widget.context.listen(_bindContext);
     }
     final size = widget.preferences.itemSize;
     return Center(
         child: CustomScrollView(slivers: [
       SliverGrid(
         delegate: SliverChildBuilderDelegate(
-            childCount: 1,
-            (context, index) => ContentPageItem(
-                item: content.Item(
-                    image: Image.network(
-                        '$protocol://$ip:$port/file?path=owl.jpg'),
-                    title: "OWl"))), //item(_contentContext!.getItem(index))),
+            childCount: _count,
+            (context, index) => item(_contentContext!.getItem(index))),
         gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
             mainAxisExtent: size.height, maxCrossAxisExtent: size.width),
       )
@@ -80,13 +89,14 @@ class ContentState extends State<ContentPage> {
   }
 }
 
-String ip = Platform.isAndroid ? '10.0.2.2' : 'localhost';
+final String ip = Platform.isAndroid ? '10.0.2.2' : '127.0.0.1';
 const int port = 31136;
 const String protocol = 'http';
 
 class UploadFileDialog extends StatefulWidget {
   final Preferences preferences;
-  UploadFileDialog({required this.preferences, Key? key}) : super(key: key);
+  const UploadFileDialog({required this.preferences, Key? key})
+      : super(key: key);
 
   @override
   State<StatefulWidget> createState() => UploadFileDialogState();
@@ -94,6 +104,7 @@ class UploadFileDialog extends StatefulWidget {
 
 class UploadFileDialogState extends State<UploadFileDialog> {
   var _files = <PlatformFile>[];
+  var _uploading = false;
 
   void _sendFile() {
     var request = MultipartRequest(
@@ -103,7 +114,17 @@ class UploadFileDialogState extends State<UploadFileDialog> {
           MultipartFile.fromBytes('files', file.bytes!, filename: file.name);
       request.files.add(value);
     }
-    request.send();
+    setState(() {
+      _uploading = true;
+    });
+    request
+        .send()
+        .then((value) => setState(() {
+              _uploading = false;
+            }))
+        .onError((error, stackTrace) => setState(() {
+              _uploading = true;
+            }));
   }
 
   bool _isFileSelected() {
@@ -136,20 +157,25 @@ class UploadFileDialogState extends State<UploadFileDialog> {
         slivers: [
           SliverFixedExtentList(
             delegate: SliverChildListDelegate(_files
-                .map<Widget>((file) => ContentPageItem(
-                    item: content.Item(
-                        image: Image.memory(file.bytes!), title: file.name)))
-                .toList()
-              ..insert(0, _selectFileButton())),
+                .map<Widget>((file) => ImageTitleItem(
+                    image: Image.memory(file.bytes!), title: file.name))
+                .toList()),
             itemExtent: widget.preferences.itemSize.width,
           )
         ]);
   }
 
   Widget _bottomPart() {
-    return FloatingActionButton(
-        onPressed: _isFileSelected() ? _sendFile : null,
-        child: const Icon(Icons.upload_file));
+    if (_uploading) {
+      return const CircularProgressIndicator();
+    } else {
+      if (_isFileSelected()) {
+        return FloatingActionButton(
+            onPressed: _sendFile, child: const Icon(Icons.upload_file));
+      } else {
+        return const SizedBox();
+      }
+    }
   }
 
   @override
@@ -164,7 +190,13 @@ class UploadFileDialogState extends State<UploadFileDialog> {
             backgroundColor: Colors.blueGrey,
             body: Column(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [Expanded(child: _topPart()), _bottomPart()],
+              children: [
+                Expanded(child: _topPart()),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [_selectFileButton(), _bottomPart()],
+                )
+              ],
             )));
   }
 }
@@ -195,10 +227,11 @@ class Scaff extends StatelessWidget {
 void main() async {
   var preferences = Preferences(Size(150, 150));
   final contextController = StreamController<content.Context>();
-  contextController
-      .add(content.ItemProvider().getContext("home")..preload(0, 10));
+  contextController.add(content.ContextProvider().getContext("home"));
   runApp(MaterialApp(
     title: "Whatever cloud",
-    home: Scaff(preferences: preferences, contextController: contextController),
+    home: SafeArea(
+        child: Scaff(
+            preferences: preferences, contextController: contextController)),
   ));
 }

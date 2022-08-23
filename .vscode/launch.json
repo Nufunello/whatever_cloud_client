@@ -5,22 +5,16 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
-			"name": "whatever_cloud_client",
+			"name": "win",
 			"request": "launch",
 			"type": "dart",
 			"deviceId": "win"
 		},
 		{
-			"name": "whatever_cloud_client (profile mode)",
+			"name": "android",
 			"request": "launch",
 			"type": "dart",
-			"flutterMode": "profile"
-		},
-		{
-			"name": "whatever_cloud_client (release mode)",
-			"request": "launch",
-			"type": "dart",
-			"flutterMode": "release"
+			"deviceId": "emulator-5554"
 		}
 	]
 }

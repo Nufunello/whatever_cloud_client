@@ -1,125 +1,126 @@
 library content;
 
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:flutter/material.dart';
+import 'dart:async' as ass;
 import "package:dart_amqp/dart_amqp.dart";
+import 'package:path/path.dart';
+import 'dart:io' show Platform;
+
+enum ItemType { image, video }
 
 class Item {
-  final Image image;
+  final String icon;
   final String title;
+  final ItemType type;
 
-  const Item({required this.image, required this.title});
+  const Item({required this.icon, required this.title, required this.type});
 }
 
-class ContextItem extends ChangeNotifier {}
+class Messager {
+  static Future<Channel> get client => (() => Client(
+          settings: ConnectionSettings(
+              host: Platform.isAndroid ? '10.0.2.2' : '127.0.0.1'))
+      .channel())();
+  static Future<Exchange> get exchange => (() => client.then((client) =>
+      client.exchange('amq.direct', ExchangeType.DIRECT, durable: true)))();
 
-class ContextQueue {
-  ContextQueue(Channel channel, Exchange exchange, String name,
+  static void privateQueue(
       String routingKey, Function(AmqpMessage message) listener) {
-    channel
-        .queue(name, durable: false)
-        .then((queue) => queue.bind(exchange, routingKey))
+    Messager.client
+        .then((client) => client.privateQueue())
+        .then((queue) async => queue.bind(await Messager.exchange, routingKey))
         .then((queue) => (queue..purge()).consume())
         .then((consumer) => consumer.listen(listener));
+  }
+
+  static void publish(String routingKey, Object message) {
+    Messager.exchange.then(
+      (exchange) => exchange.publish(message, routingKey),
+    );
   }
 }
 
 class Context {
-  static const _exchange = 'amq.direct';
-  static const ExchangeType _type = ExchangeType.DIRECT;
+  final _items = <int, ass.Completer<Item>>{};
+  final _size = ass.StreamController<int>();
+  final void Function(int, int) _askForItem;
 
-  final Client client;
-  Stream<int> get count => _countController.stream;
+  Stream<int> get size => _size.stream;
 
-  final _countController = StreamController<int>();
-  final _content = <int, Completer<Item>>{};
+  Context({required askForItem}) : _askForItem = askForItem;
 
-  void _prepareConsumer(Consumer consumer) {
-    consumer.queue.purge();
+  ass.Future<Item> getItem(int index) {
+    final completer = _items.putIfAbsent(
+      index,
+      () {
+        _askForItem(index, 1);
+        return ass.Completer<Item>();
+      },
+    );
+    return completer.future;
   }
 
-  void _requestContent(int index, int size) {
-    client
-        .channel()
-        .then((channel) => channel.exchange('amq.direct', _type, durable: true))
-        .then(
-          (exchange) => exchange.publish({'Index': index, 'Size': size},
-              "whatever_cloud/server/home/content"),
-        );
+  void setSize(int size) {
+    _size.add(size);
+    _items.clear();
   }
 
-  void _requestSize() {
-    client
-        .channel()
-        .then((channel) => channel.exchange('amq.direct', _type, durable: true))
-        .then(
-          (exchange) => exchange.publish("home", "whatever_cloud/server/size"),
-        );
-  }
-
-  void _content_listener(AmqpMessage message) {
-    final Iterable payload = json.decode(message.payloadAsString);
-    for (var json in payload) {
-      final completer = _content[int.parse(json['Index'])]!;
-      final item = Item(
-          image: Image.file(File(
-              'C:/Users/nafan/Desktop/dev/whatever_cloud_client/build/owl.jpg')),
-          title: json['Title']);
-      completer.complete(item);
-    }
-  }
-
-  void _size_listener(AmqpMessage message) {
-    _countController.add(message.payloadAsJson['Size']);
-  }
-
-  Future<Consumer> _init_queue(String name, String routingKey, Channel channel,
-      Future<Exchange> exchange) async {
-    final queue = await channel.queue(name, durable: false);
-    queue.bind(await exchange, routingKey);
-    return queue.consume();
-  }
-
-  Context({required this.client}) {
-    client.channel().then((channel) async {
-      final exchange = channel.exchange(_exchange, _type, durable: true);
-      ContextQueue(channel, await exchange, 'home_content',
-          'whatever_cloud/client/home/content', _content_listener);
-      ContextQueue(channel, await exchange, 'home_size',
-          'whatever_cloud/client/home/size', _size_listener);
-    });
-    _requestSize();
-  }
-  Future<Item> getItem(int index) {
-    if (_content.containsKey(index)) {
-      return _content[index]!.future;
-    } else {
-      final completer = _content.putIfAbsent(index, () => Completer());
-      var future = completer.future;
-      _requestContent(index, 1);
-      return future;
-    }
-  }
-
-  Future<void> preload(int index, int size) async {
-    final futures = List<Future<Item>>.generate(size, (i) {
-      i + index;
-      var future = _content.putIfAbsent(i, () => Completer()).future;
-      _requestContent(i, 1);
-      return future;
-    });
-    for (final future in futures) {
-      await future;
-    }
+  void addItem(int index, Item item) {
+    final completer = _items[index]!;
+    completer.complete(item);
   }
 }
 
-class ItemProvider {
-  static final contexts = {'home': Context(client: Client())};
-  Context getContext(String context) {
-    return contexts[context]!;
+const types = <String, ItemType>{
+  '.jpg': ItemType.image,
+  '.png': ItemType.image
+};
+
+class ContextProvider {
+  final _items = <String, Context>{};
+
+  Context Function() _getContextCreator(String name) {
+    return () {
+      Messager.publish('server/search/size', {'Context': name});
+      return Context(
+          askForItem: (int index, int count) => Messager.publish(
+              'server/search/content',
+              {'Context': name, 'Index': index, 'Count': count}));
+    };
+  }
+
+  void _contentHandle(AmqpMessage arg) {
+    final message = arg.payloadAsJson;
+
+    final name = message['Context'];
+    final context = _items.putIfAbsent(name, _getContextCreator(name));
+
+    final items = message['Items'];
+    for (final item in items) {
+      final String path = item['Path'];
+      context.addItem(
+          item['Index'],
+          Item(
+              title: path,
+              icon: basename(path),
+              type: types[extension(path)]!));
+    }
+  }
+
+  void _sizeHandle(AmqpMessage arg) {
+    final message = arg.payloadAsJson;
+
+    final name = message['Context'];
+    final context = _items.putIfAbsent(name, _getContextCreator(name));
+
+    context.setSize(message['Size']);
+  }
+
+  ContextProvider() {
+    Messager.privateQueue('client/search/content', _contentHandle);
+    Messager.privateQueue('client/search/size', _sizeHandle);
+  }
+  Context getContext(String name) {
+    final context = _items.putIfAbsent(name, _getContextCreator(name));
+    return context;
   }
 }
