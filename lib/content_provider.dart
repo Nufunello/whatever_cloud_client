@@ -1,6 +1,7 @@
 library content;
 
 import 'dart:async' as ass;
+import 'dart:collection';
 import "package:dart_amqp/dart_amqp.dart";
 import 'package:path/path.dart';
 import 'dart:io' show Platform;
@@ -23,13 +24,13 @@ class Messager {
   static Future<Exchange> get exchange => (() => channel.then((client) =>
       client.exchange('amq.direct', ExchangeType.DIRECT, durable: true)))();
 
-  static void privateQueue(
+  static Future<Consumer> privateQueue(
       String routingKey, Function(AmqpMessage message) listener) {
-    Messager.channel
+    return Messager.channel
         .then((client) => client.privateQueue())
         .then((queue) async => queue.bind(await Messager.exchange, routingKey))
         .then((queue) => (queue..purge()).consume())
-        .then((consumer) => consumer.listen(listener));
+      ..then((consumer) => consumer.listen(listener));
   }
 
   static void publish(String routingKey, Object message) {
@@ -84,6 +85,7 @@ const types = <String, ItemType>{
 
 class ContextProvider {
   final _items = <String, Context>{};
+  late Future<Consumer> _consumer;
 
   Context Function() _getContextCreator(String name) {
     return () {
@@ -127,13 +129,14 @@ class ContextProvider {
 
   ContextProvider() {
     Messager.privateQueue('client/search/content', _contentHandle);
-    Messager.privateQueue('client/search/size', _sizeHandle);
+    _consumer = Messager.privateQueue('client/search/size', _sizeHandle);
   }
   Context getContext(String name) {
     final askForSize = !_items.containsKey(name);
     final context = _items.putIfAbsent(name, _getContextCreator(name));
     if (askForSize) {
-      Messager.publish('server/search/size', {'Context': name});
+      _consumer.then(
+          (value) => Messager.publish('server/search/size', {'Context': name}));
     }
     return context;
   }
