@@ -41,9 +41,13 @@ class ImageTitleItem extends StatelessWidget {
 
 class ContentPageItem extends StatefulWidget {
   final content.Item item;
-  final void Function(bool) onSelectionChanged;
+  final SelectedIndexes selectedItems;
+  final int index;
   const ContentPageItem(
-      {Key? key, required this.item, required this.onSelectionChanged})
+      {Key? key,
+      required this.item,
+      required this.selectedItems,
+      required this.index})
       : super(key: key);
 
   @override
@@ -51,12 +55,16 @@ class ContentPageItem extends StatefulWidget {
 }
 
 class ContentPageItemState extends State<ContentPageItem> {
-  bool _isSelected = false;
-  void setSelected(bool isSelected) {
-    setState(() {
-      _isSelected = isSelected;
-      widget.onSelectionChanged(_isSelected);
-    });
+  void updateSelected() {
+    final selectedItems = widget.selectedItems;
+    final index = widget.index;
+    final shouldBeSelected = !selectedItems.contains(index);
+    if (shouldBeSelected) {
+      selectedItems.add(index);
+    } else {
+      selectedItems.remove(index);
+    }
+    setState(() {});
   }
 
   Widget base(content.Item item) {
@@ -69,30 +77,59 @@ class ContentPageItemState extends State<ContentPageItem> {
 
   Widget applyGesture(Widget base) {
     return GestureDetector(
-        child: base,
-        onLongPress: () => setSelected(true),
-        onTap: () {
-          setSelected(!_isSelected);
-        });
+        onLongPress: updateSelected, onTap: updateSelected, child: base);
   }
 
   @override
   Widget build(BuildContext context) {
     final item = applyGesture(base(widget.item));
-    if (_isSelected) {
-      return Container(
-          decoration:
-              BoxDecoration(border: Border.all(color: Colors.blueAccent)),
-          child: item);
-    } else {
-      return item;
-    }
+    final selectedItems = widget.selectedItems;
+    final index = widget.index;
+    return Container(
+        decoration: selectedItems.contains(index)
+            ? BoxDecoration(border: Border.all(color: Colors.blueAccent))
+            : null,
+        child: item);
   }
+}
+
+class SelectedIndexes {
+  final _selectedItems = <int>{};
+  final _controllbarAppear = StreamController<bool>();
+
+  void _notify() {
+    _controllbarAppear.add(_selectedItems.isNotEmpty);
+  }
+
+  void add(int index) {
+    _selectedItems.add(index);
+    _notify();
+  }
+
+  void remove(int index) {
+    _selectedItems.remove(index);
+    _notify();
+  }
+
+  void clear() {
+    _selectedItems.clear();
+    _notify();
+  }
+
+  bool contains(int index) {
+    return _selectedItems.contains(index);
+  }
+
+  List<int> toList() {
+    return _selectedItems.toList();
+  }
+
+  Stream<bool> get isNotEmpty => _controllbarAppear.stream;
 }
 
 class ContentState extends State<ContentPage> {
   content.Context? _contentContext;
-  final _selectedItems = <int>{};
+  final _selectedItems = SelectedIndexes();
   int _count = 0;
 
   void _bindContext(content.Context event) {
@@ -100,8 +137,8 @@ class ContentState extends State<ContentPage> {
     event.size.listen((event) {
       setState(() {
         _count = event;
-        _selectedItems.clear();
       });
+      _selectedItems.clear();
     });
   }
 
@@ -109,15 +146,8 @@ class ContentState extends State<ContentPage> {
     return FutureBuilder<content.Item>(
       builder: ((context, snapshot) => snapshot.hasData
           ? ContentPageItem(
-              onSelectionChanged: (isSelected) {
-                setState(() {
-                  if (isSelected) {
-                    _selectedItems.add(index);
-                  } else {
-                    _selectedItems.remove(index);
-                  }
-                });
-              },
+              selectedItems: _selectedItems,
+              index: index,
               item: snapshot.requireData,
             )
           : const CircularProgressIndicator()),
@@ -157,12 +187,16 @@ class ContentState extends State<ContentPage> {
     if (_contentContext == null) {
       widget.context.listen(_bindContext);
     }
-    final children = <Widget>[];
-    if (_selectedItems.isNotEmpty) {
-      children.add(controlbar());
-    }
-    children.add(Expanded(child: elementsGrid()));
-    return Column(children: children);
+    return StreamBuilder<bool>(
+        stream: _selectedItems.isNotEmpty,
+        builder: (context, snapshot) {
+          final children = <Widget>[];
+          if (snapshot.hasData && snapshot.requireData) {
+            children.add(controlbar());
+          }
+          children.add(Expanded(child: elementsGrid()));
+          return Column(children: children);
+        });
   }
 }
 
