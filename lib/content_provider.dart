@@ -5,7 +5,7 @@ import "package:dart_amqp/dart_amqp.dart";
 import 'package:path/path.dart';
 import 'dart:io' show Platform;
 
-enum ItemType { image, video }
+enum ItemType { image, video, unsupported }
 
 class Item {
   final String icon;
@@ -16,16 +16,16 @@ class Item {
 }
 
 class Messager {
-  static Future<Channel> get client => (() => Client(
-          settings: ConnectionSettings(
-              host: Platform.isAndroid ? '10.0.2.2' : '127.0.0.1'))
-      .channel())();
-  static Future<Exchange> get exchange => (() => client.then((client) =>
+  static final client = Client(
+      settings: ConnectionSettings(
+          host: Platform.isAndroid ? '10.0.2.2' : '127.0.0.1'));
+  static Future<Channel> get channel => (() => client.channel())();
+  static Future<Exchange> get exchange => (() => channel.then((client) =>
       client.exchange('amq.direct', ExchangeType.DIRECT, durable: true)))();
 
   static void privateQueue(
       String routingKey, Function(AmqpMessage message) listener) {
-    Messager.client
+    Messager.channel
         .then((client) => client.privateQueue())
         .then((queue) async => queue.bind(await Messager.exchange, routingKey))
         .then((queue) => (queue..purge()).consume())
@@ -43,10 +43,13 @@ class Context {
   final _items = <int, ass.Completer<Item>>{};
   final _size = ass.StreamController<int>();
   final void Function(int, int) _askForItem;
+  final void Function(List<int>) _askRemoveItem;
 
   Stream<int> get size => _size.stream;
 
-  Context({required askForItem}) : _askForItem = askForItem;
+  Context({required askForItem, required askForRemove})
+      : _askForItem = askForItem,
+        _askRemoveItem = askForRemove;
 
   ass.Future<Item> getItem(int index) {
     final completer = _items.putIfAbsent(
@@ -68,6 +71,10 @@ class Context {
     final completer = _items[index]!;
     completer.complete(item);
   }
+
+  void askRemoveItem(List<int> index) {
+    _askRemoveItem(index);
+  }
 }
 
 const types = <String, ItemType>{
@@ -80,11 +87,17 @@ class ContextProvider {
 
   Context Function() _getContextCreator(String name) {
     return () {
-      Messager.publish('server/search/size', {'Context': name});
       return Context(
           askForItem: (int index, int count) => Messager.publish(
               'server/search/content',
-              {'Context': name, 'Index': index, 'Count': count}));
+              {'Context': name, 'Index': index, 'Count': count}),
+          askForRemove: (List<int> indexes) =>
+              Messager.publish('server/search/update', {
+                'Context': name,
+                'Items': indexes
+                    .map((index) => {'Index': index, 'Action': 'Remove'})
+                    .toList()
+              }));
     };
   }
 
@@ -97,12 +110,9 @@ class ContextProvider {
     final items = message['Items'];
     for (final item in items) {
       final String path = item['Path'];
+      final type = types[extension(path)] ?? ItemType.unsupported;
       context.addItem(
-          item['Index'],
-          Item(
-              title: path,
-              icon: basename(path),
-              type: types[extension(path)]!));
+          item['Index'], Item(title: path, icon: basename(path), type: type));
     }
   }
 
@@ -120,7 +130,11 @@ class ContextProvider {
     Messager.privateQueue('client/search/size', _sizeHandle);
   }
   Context getContext(String name) {
+    final askForSize = !_items.containsKey(name);
     final context = _items.putIfAbsent(name, _getContextCreator(name));
+    if (askForSize) {
+      Messager.publish('server/search/size', {'Context': name});
+    }
     return context;
   }
 }
