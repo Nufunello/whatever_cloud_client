@@ -80,7 +80,9 @@ class Context {
 
 const types = <String, ItemType>{
   '.jpg': ItemType.image,
-  '.png': ItemType.image
+  '.png': ItemType.image,
+  '.gif': ItemType.image,
+  '.mp4': ItemType.video
 };
 
 class ContextProvider {

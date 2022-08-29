@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:http/http.dart';
 import 'package:file_picker/file_picker.dart';
 
 import 'package:flutter/material.dart';
 import 'content_provider.dart' as content;
+import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 import 'dart:io' show Platform;
 
 class Size {
@@ -15,6 +18,57 @@ class Size {
 class Preferences {
   late Size itemSize;
   Preferences(this.itemSize);
+}
+
+class PlayVideoDialog extends StatefulWidget {
+  final String url;
+  const PlayVideoDialog({Key? key, required this.url}) : super(key: key);
+
+  @override
+  State<StatefulWidget> createState() => PlayVideoDialogState();
+}
+
+class PlayVideoDialogState extends State<PlayVideoDialog> {
+  VideoPlayerController? _videoController;
+  Future<void>? _video;
+  @override
+  Widget build(BuildContext context) {
+    _videoController ??= VideoPlayerController.network(widget.url);
+    final videoController = _videoController!;
+    _video ??= videoController.initialize();
+    return FutureBuilder(
+        future: _video,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.done) {
+            return Scaffold(
+                body: Center(
+                    child: FittedBox(
+                        fit: BoxFit.contain,
+                        child: SizedBox(
+                          height: videoController.value.size.height,
+                          width: videoController.value.size.width,
+                          child: VideoPlayer(videoController),
+                        ))),
+                floatingActionButton: FloatingActionButton(
+                    onPressed: () {
+                      setState(() {
+                        videoController.value.isPlaying
+                            ? videoController.pause()
+                            : videoController.play();
+                      });
+                    },
+                    child: Icon(
+                      videoController.value.isPlaying
+                          ? Icons.pause
+                          : Icons.play_arrow,
+                    )));
+          } else {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+        });
+  }
 }
 
 class ContentPage extends StatefulWidget {
@@ -29,7 +83,7 @@ class ContentPage extends StatefulWidget {
 }
 
 class ImageTitleItem extends StatelessWidget {
-  final Image image;
+  final Widget image;
   final String title;
   const ImageTitleItem({Key? key, required this.image, required this.title})
       : super(key: key);
@@ -67,17 +121,49 @@ class ContentPageItemState extends State<ContentPageItem> {
     setState(() {});
   }
 
+  static final fileWidgets = <content.ItemType, Widget Function(String)>{
+    content.ItemType.unsupported: (String path) => defaultImage,
+    content.ItemType.image: (String path) =>
+        Image.network('$protocol://$ip:$port/file?path=$path'),
+    content.ItemType.video: (String path) => FutureBuilder<Uint8List?>(
+        future: VideoThumbnail.thumbnailData(
+            video: '$protocol://$ip:$port/file?path=$path'),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.done) {
+            return Image.memory(snapshot.requireData!);
+          } else {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+        })
+  };
+
   Widget base(content.Item item) {
     return ImageTitleItem(
-        image: item.type == content.ItemType.image
-            ? Image.network('$protocol://$ip:$port/file?path=${item.icon}')
-            : defaultImage,
-        title: item.title);
+        image: fileWidgets[item.type]!(item.icon), title: item.title);
   }
 
   Widget applyGesture(Widget base) {
-    return GestureDetector(
-        onLongPress: updateSelected, onTap: updateSelected, child: base);
+    return StreamBuilder<bool>(
+        stream: widget.selectedItems.isNotEmpty,
+        builder: ((context, snapshot) => GestureDetector(
+            onLongPress: updateSelected,
+            onTap: (() {
+              if (snapshot.hasData && snapshot.requireData) {
+                updateSelected();
+              } else {
+                if (widget.item.type == content.ItemType.video) {
+                  showDialog(
+                      context: context,
+                      builder: (context) => PlayVideoDialog(
+                            url:
+                                '$protocol://$ip:$port/file?path=${widget.item.icon}',
+                          ));
+                }
+              }
+            }),
+            child: base)));
   }
 
   @override
@@ -95,7 +181,7 @@ class ContentPageItemState extends State<ContentPageItem> {
 
 class SelectedIndexes {
   final _selectedItems = <int>{};
-  final _controllbarAppear = StreamController<bool>();
+  final _controllbarAppear = StreamController<bool>.broadcast();
 
   void _notify() {
     _controllbarAppear.add(_selectedItems.isNotEmpty);
@@ -263,7 +349,7 @@ class UploadFileDialogState extends State<UploadFileDialog> {
   }
 
   Image _imageForItem(PlatformFile file) {
-    if ((content.types['.' + file.extension!] ??
+    if ((content.types['.${file.extension!}'] ??
             content.ItemType.unsupported) ==
         content.ItemType.image) {
       return Image.memory(file.bytes!);
