@@ -14,7 +14,7 @@
 			"name": "android",
 			"request": "launch",
 			"type": "dart",
-			"deviceId": "emulator-5554"
+			"deviceId": "0123456789ABCDEF"
 		}
 	]
 }

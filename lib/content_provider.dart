@@ -1,25 +1,24 @@
 library content;
 
 import 'dart:async' as ass;
-import 'dart:collection';
 import "package:dart_amqp/dart_amqp.dart";
 import 'package:path/path.dart';
-import 'dart:io' show Platform;
 
 enum ItemType { image, video, unsupported }
 
 class Item {
-  final String icon;
+  final String path;
   final String title;
   final ItemType type;
 
-  const Item({required this.icon, required this.title, required this.type});
+  const Item({required this.title, required this.type, required this.path});
 }
 
 class Messager {
   static final client = Client(
       settings: ConnectionSettings(
-          host: Platform.isAndroid ? '10.0.2.2' : '127.0.0.1'));
+          host: '192.168.43.101',
+          authProvider: const PlainAuthenticator("test", "test")));
   static Future<Channel> get channel => (() => client.channel())();
   static Future<Exchange> get exchange => (() => channel.then((client) =>
       client.exchange('amq.direct', ExchangeType.DIRECT, durable: true)))();
@@ -116,7 +115,7 @@ class ContextProvider {
       final String path = item['Path'];
       final type = types[extension(path)] ?? ItemType.unsupported;
       context.addItem(
-          item['Index'], Item(title: path, icon: basename(path), type: type));
+          item['Index'], Item(title: basename(path), type: type, path: path));
     }
   }
 

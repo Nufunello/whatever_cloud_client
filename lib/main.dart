@@ -1,13 +1,10 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:http/http.dart';
 import 'package:file_picker/file_picker.dart';
 
 import 'package:flutter/material.dart';
 import 'content_provider.dart' as content;
 import 'package:video_player/video_player.dart';
-import 'package:video_thumbnail/video_thumbnail.dart';
-import 'dart:io' show Platform;
 
 class Size {
   late final double height;
@@ -97,11 +94,13 @@ class ContentPageItem extends StatefulWidget {
   final content.Item item;
   final SelectedIndexes selectedItems;
   final int index;
+  final Preferences preferences;
   const ContentPageItem(
       {Key? key,
       required this.item,
       required this.selectedItems,
-      required this.index})
+      required this.index,
+      required this.preferences})
       : super(key: key);
 
   @override
@@ -121,27 +120,20 @@ class ContentPageItemState extends State<ContentPageItem> {
     setState(() {});
   }
 
-  static final fileWidgets = <content.ItemType, Widget Function(String)>{
-    content.ItemType.unsupported: (String path) => defaultImage,
-    content.ItemType.image: (String path) =>
-        Image.network('$protocol://$ip:$port/file?path=$path'),
-    content.ItemType.video: (String path) => FutureBuilder<Uint8List?>(
-        future: VideoThumbnail.thumbnailData(
-            video: '$protocol://$ip:$port/file?path=$path'),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done) {
-            return Image.memory(snapshot.requireData!);
-          } else {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
-        })
+  static final fileWidgets =
+      <content.ItemType, Widget Function(String, Preferences preferences)>{
+    content.ItemType.unsupported: (String path, Preferences preferences) =>
+        defaultImage,
+    content.ItemType.image: (String path, Preferences preferences) => Image.network(
+        '$protocol://$ip:$port/icon/$path/?width=${preferences.itemSize.width}&height=${preferences.itemSize.height}'),
+    content.ItemType.video: (String path, Preferences preferences) => Image.network(
+        '$protocol://$ip:$port/icon/$path/?width=${preferences.itemSize.width}&height=${preferences.itemSize.height}')
   };
 
   Widget base(content.Item item) {
     return ImageTitleItem(
-        image: fileWidgets[item.type]!(item.icon), title: item.title);
+        image: fileWidgets[item.type]!(item.path, widget.preferences),
+        title: item.title);
   }
 
   Widget applyGesture(Widget base) {
@@ -158,7 +150,7 @@ class ContentPageItemState extends State<ContentPageItem> {
                       context: context,
                       builder: (context) => PlayVideoDialog(
                             url:
-                                '$protocol://$ip:$port/file?path=${widget.item.icon}',
+                                '$protocol://$ip:$port/file/${widget.item.path}',
                           ));
                 }
               }
@@ -235,6 +227,7 @@ class ContentState extends State<ContentPage> {
               selectedItems: _selectedItems,
               index: index,
               item: snapshot.requireData,
+              preferences: widget.preferences,
             )
           : const CircularProgressIndicator()),
       future: future,
@@ -286,8 +279,8 @@ class ContentState extends State<ContentPage> {
   }
 }
 
-final String ip = Platform.isAndroid ? '10.0.2.2' : '127.0.0.1';
-const int port = 31136;
+const String ip = '192.168.43.101';
+const int port = 44341;
 const String protocol = 'http';
 final defaultImage = Image.asset('images/file.png');
 
