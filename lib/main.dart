@@ -150,7 +150,7 @@ class ContentPageItemState extends State<ContentPageItem> {
                       context: context,
                       builder: (context) => PlayVideoDialog(
                             url:
-                                '$protocol://$ip:$port/file/${widget.item.path}',
+                                '$protocol://$ip:$port/file/${widget.item.path}/',
                           ));
                 }
               }
@@ -279,7 +279,7 @@ class ContentState extends State<ContentPage> {
   }
 }
 
-const String ip = '192.168.43.101';
+const String ip = '192.168.0.100';
 const int port = 44341;
 const String protocol = 'http';
 final defaultImage = Image.asset('images/file.png');

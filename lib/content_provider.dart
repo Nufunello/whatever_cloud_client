@@ -17,7 +17,7 @@ class Item {
 class Messager {
   static final client = Client(
       settings: ConnectionSettings(
-          host: '192.168.43.101',
+          host: '192.168.0.100',
           authProvider: const PlainAuthenticator("test", "test")));
   static Future<Channel> get channel => (() => client.channel())();
   static Future<Exchange> get exchange => (() => channel.then((client) =>
