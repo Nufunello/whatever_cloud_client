@@ -3,7 +3,8 @@
    <application
         android:label="whatever_cloud_client"
         android:name="${applicationName}"
-		android:usesCleartextTraffic="true"
+        android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
@@ -33,4 +34,10 @@
             android:value="2" />
     </application>
     <uses-permission android:name="android.permission.INTERNET"/>
+	<uses-permission android:name="android.permission.READ_INTERNAL_STORAGE" />
+	<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+	<uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
+	<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+	<uses-permission android:name="android.permission.ACTION_MANAGE_WRITE_SETTINGS" />
 </manifest>

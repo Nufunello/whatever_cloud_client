@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:path/path.dart';
 import 'package:http/http.dart';
 import 'package:file_picker/file_picker.dart';
 
 import 'package:flutter/material.dart';
 import 'content_provider.dart' as content;
 import 'package:video_player/video_player.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class Size {
   late final double height;
@@ -234,18 +237,51 @@ class ContentState extends State<ContentPage> {
     );
   }
 
+  Widget deleteButton() {
+    return FloatingActionButton(
+      child: const Icon(Icons.delete),
+      onPressed: () {
+        _contentContext?.askRemoveItem(_selectedItems.toList());
+      },
+    );
+  }
+
+  Widget downloadButton() {
+    return FloatingActionButton(
+      child: const Icon(Icons.download),
+      onPressed: () async {
+        var status = await Permission.storage.status;
+        if (!status.isGranted &&
+            !await Permission.storage.request().isGranted) {
+          return;
+        }
+        FilePicker.platform
+            .getDirectoryPath(dialogTitle: "Save files to")
+            .then((dest) {
+          for (final i in _selectedItems._selectedItems) {
+            _contentContext?.getItem(i).then((item) async {
+              final response = await get(Uri(
+                  scheme: protocol,
+                  host: ip,
+                  port: port,
+                  path: 'file/${item.path}/'));
+
+              File(join(dest!, item.title))
+                  .writeAsBytesSync(response.bodyBytes);
+            });
+          }
+        });
+      },
+    );
+  }
+
   Widget controlbar() {
     return Container(
         color: Colors.lightBlue,
         child: IntrinsicHeight(
-            child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-          FloatingActionButton(
-            child: const Icon(Icons.delete),
-            onPressed: () {
-              _contentContext?.askRemoveItem(_selectedItems.toList());
-            },
-          )
-        ])));
+            child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [deleteButton(), downloadButton()])));
   }
 
   Widget elementsGrid() {
