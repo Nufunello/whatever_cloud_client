@@ -17,9 +17,11 @@ class Item {
 class Messager {
   static final client = Client(
       settings: ConnectionSettings(
-          host: '192.168.0.100',
+          host: '192.168.0.105',
           authProvider: const PlainAuthenticator("test", "test")));
-  static Future<Channel> get channel => (() => client.channel())();
+  static Future<Channel>? _channel;
+  static Future<Channel> get channel =>
+      (() => (_channel ??= client.channel()))();
   static Future<Exchange> get exchange => (() => channel.then((client) =>
       client.exchange('amq.direct', ExchangeType.DIRECT, durable: true)))();
 

@@ -279,7 +279,7 @@ class ContentState extends State<ContentPage> {
   }
 }
 
-const String ip = '192.168.0.100';
+const String ip = '192.168.0.105';
 const int port = 44341;
 const String protocol = 'http';
 final defaultImage = Image.asset('images/file.png');
