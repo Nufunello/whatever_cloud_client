@@ -71,6 +71,61 @@ class PlayVideoDialogState extends State<PlayVideoDialog> {
   }
 }
 
+class ImageDialog extends StatelessWidget {
+  final String url;
+  final String title;
+  const ImageDialog({Key? key, required this.url, required this.title})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Column(children: [
+        Expanded(
+            child: Image.network(
+          url,
+          loadingBuilder: (BuildContext context, Widget child,
+              ImageChunkEvent? loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Center(
+              child: CircularProgressIndicator(
+                value: loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded /
+                        loadingProgress.expectedTotalBytes!
+                    : null,
+              ),
+            );
+          },
+        )),
+        Text(
+          title,
+          style: TextStyle(backgroundColor: Colors.blue),
+        )
+      ]),
+    );
+  }
+}
+
+class UnsupportedDialog extends StatelessWidget {
+  final String title;
+  const UnsupportedDialog({Key? key, required this.title}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      child: Container(
+        width: 200,
+        height: 200,
+        decoration: const BoxDecoration(
+            image: DecorationImage(
+                image: ExactAssetImage('images/file.png'), fit: BoxFit.cover)),
+        child: Text(title),
+      ),
+    );
+  }
+}
+
 class ContentPage extends StatefulWidget {
   final Preferences preferences;
   final Stream<content.Context> context;
@@ -148,13 +203,36 @@ class ContentPageItemState extends State<ContentPageItem> {
               if (snapshot.hasData && snapshot.requireData) {
                 updateSelected();
               } else {
-                if (widget.item.type == content.ItemType.video) {
-                  showDialog(
-                      context: context,
-                      builder: (context) => PlayVideoDialog(
-                            url:
-                                '$protocol://$ip:$port/file/${widget.item.path}/',
-                          ));
+                switch (widget.item.type) {
+                  case content.ItemType.video:
+                    {
+                      showDialog(
+                          context: context,
+                          builder: (context) => PlayVideoDialog(
+                                url:
+                                    '$protocol://$ip:$port/file/${widget.item.path}/',
+                              ));
+                      break;
+                    }
+                  case content.ItemType.image:
+                    {
+                      showDialog(
+                          context: context,
+                          builder: (context) => ImageDialog(
+                                url:
+                                    '$protocol://$ip:$port/file/${widget.item.path}/',
+                                title: widget.item.title,
+                              ));
+                      break;
+                    }
+                  case content.ItemType.unsupported:
+                    {
+                      showDialog(
+                          context: context,
+                          builder: (context) =>
+                              UnsupportedDialog(title: widget.item.title));
+                      break;
+                    }
                 }
               }
             }),
