@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'content_provider.dart' as content;
 import 'package:video_player/video_player.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_image/flutter_image.dart';
 
 class Size {
   late final double height;
@@ -83,21 +84,8 @@ class ImageDialog extends StatelessWidget {
       backgroundColor: Colors.transparent,
       child: Column(children: [
         Expanded(
-            child: Image.network(
-          url,
-          loadingBuilder: (BuildContext context, Widget child,
-              ImageChunkEvent? loadingProgress) {
-            if (loadingProgress == null) return child;
-            return Center(
-              child: CircularProgressIndicator(
-                value: loadingProgress.expectedTotalBytes != null
-                    ? loadingProgress.cumulativeBytesLoaded /
-                        loadingProgress.expectedTotalBytes!
-                    : null,
-              ),
-            );
-          },
-        )),
+          child: Image(image: NetworkImageWithRetry(url)),
+        ),
         Text(
           title,
           style: TextStyle(backgroundColor: Colors.blue),
@@ -203,6 +191,9 @@ class ContentPageItemState extends State<ContentPageItem> {
               if (snapshot.hasData && snapshot.requireData) {
                 updateSelected();
               } else {
+                if (widget.selectedItems.hasIndexes()) {
+                  return;
+                }
                 switch (widget.item.type) {
                   case content.ItemType.video:
                     {
@@ -281,6 +272,10 @@ class SelectedIndexes {
 
   List<int> toList() {
     return _selectedItems.toList();
+  }
+
+  bool hasIndexes() {
+    return _selectedItems.isNotEmpty;
   }
 
   Stream<bool> get isNotEmpty => _controllbarAppear.stream;

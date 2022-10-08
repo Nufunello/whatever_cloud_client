@@ -81,6 +81,7 @@ class Context {
 
 const types = <String, ItemType>{
   '.jpg': ItemType.image,
+  '.jpeg': ItemType.image,
   '.png': ItemType.image,
   '.gif': ItemType.image,
   '.mp4': ItemType.video
