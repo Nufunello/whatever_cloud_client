@@ -6,6 +6,8 @@ import 'package:path/path.dart';
 
 enum ItemType { image, video, unsupported }
 
+late String SERVER_IP;
+
 class Item {
   final String path;
   final String title;
@@ -15,27 +17,38 @@ class Item {
 }
 
 class Messager {
-  static final client = Client(
-      settings: ConnectionSettings(
-          host: '192.168.0.105',
-          authProvider: const PlainAuthenticator("test", "test")));
+  static final clients = <String, Client>{};
+  static Client client(String IP) {
+    return clients.putIfAbsent(
+        IP,
+        () => Client(
+            settings: ConnectionSettings(
+                host: IP,
+                authProvider: const PlainAuthenticator("test", "test"))));
+  }
+
   static Future<Channel>? _channel;
-  static Future<Channel> get channel =>
-      (() => (_channel ??= client.channel()))();
-  static Future<Exchange> get exchange => (() => channel.then((client) =>
-      client.exchange('amq.direct', ExchangeType.DIRECT, durable: true)))();
+  static Future<Channel> channel(String ip) {
+    return _channel ??= client(ip).channel();
+  }
+
+  static Future<Exchange> exchange(String IP) {
+    return channel(IP).then((client) =>
+        client.exchange('amq.direct', ExchangeType.DIRECT, durable: true));
+  }
 
   static Future<Consumer> privateQueue(
-      String routingKey, Function(AmqpMessage message) listener) {
-    return Messager.channel
+      String ip, String routingKey, Function(AmqpMessage message) listener) {
+    return Messager.channel(ip)
         .then((client) => client.privateQueue())
-        .then((queue) async => queue.bind(await Messager.exchange, routingKey))
+        .then((queue) async =>
+            queue.bind(await Messager.exchange(ip), routingKey))
         .then((queue) => (queue..purge()).consume())
       ..then((consumer) => consumer.listen(listener));
   }
 
-  static void publish(String routingKey, Object message) {
-    Messager.exchange.then(
+  static void publish(String ip, String routingKey, Object message) {
+    Messager.exchange(ip).then(
       (exchange) => exchange.publish(message, routingKey),
     );
   }
@@ -70,7 +83,7 @@ class Context {
   }
 
   void addItem(int index, Item item) {
-    final completer = _items[index]!;
+    final completer = _items.putIfAbsent(index, () => ass.Completer());
     completer.complete(item);
   }
 
@@ -91,14 +104,15 @@ class ContextProvider {
   final _items = <String, Context>{};
   late Future<Consumer> _consumer;
 
-  Context Function() _getContextCreator(String name) {
+  Context Function() _getContextCreator(String ip, String name) {
     return () {
       return Context(
           askForItem: (int index, int count) => Messager.publish(
+              ip,
               'server/search/content',
               {'Context': name, 'Index': index, 'Count': count}),
           askForRemove: (List<int> indexes) =>
-              Messager.publish('server/search/update', {
+              Messager.publish(ip, 'server/search/update', {
                 'Context': name,
                 'Items': indexes
                     .map((index) => {'Index': index, 'Action': 'Remove'})
@@ -107,11 +121,11 @@ class ContextProvider {
     };
   }
 
-  void _contentHandle(AmqpMessage arg) {
+  void _contentHandle(String ip, AmqpMessage arg) {
     final message = arg.payloadAsJson;
 
     final name = message['Context'];
-    final context = _items.putIfAbsent(name, _getContextCreator(name));
+    final context = _items.putIfAbsent(name, _getContextCreator(ip, name));
 
     final items = message['Items'];
     for (final item in items) {
@@ -122,25 +136,27 @@ class ContextProvider {
     }
   }
 
-  void _sizeHandle(AmqpMessage arg) {
+  void _sizeHandle(String ip, AmqpMessage arg) {
     final message = arg.payloadAsJson;
 
     final name = message['Context'];
-    final context = _items.putIfAbsent(name, _getContextCreator(name));
+    final context = _items.putIfAbsent(name, _getContextCreator(ip, name));
 
     context.setSize(message['Size']);
   }
 
-  ContextProvider() {
-    Messager.privateQueue('client/search/content', _contentHandle);
-    _consumer = Messager.privateQueue('client/search/size', _sizeHandle);
+  ContextProvider(String ip) {
+    Messager.privateQueue(ip, 'client/search/content',
+        ((message) => _contentHandle(ip, message)));
+    _consumer = Messager.privateQueue(
+        ip, 'client/search/size', ((message) => _sizeHandle(ip, message)));
   }
-  Context getContext(String name) {
+  Context getContext(String ip, String name) {
     final askForSize = !_items.containsKey(name);
-    final context = _items.putIfAbsent(name, _getContextCreator(name));
+    final context = _items.putIfAbsent(name, _getContextCreator(ip, name));
     if (askForSize) {
-      _consumer.then(
-          (value) => Messager.publish('server/search/size', {'Context': name}));
+      _consumer.then((value) =>
+          Messager.publish(ip, 'server/search/size', {'Context': name}));
     }
     return context;
   }

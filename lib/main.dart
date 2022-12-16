@@ -10,6 +10,8 @@ import 'package:video_player/video_player.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_image/flutter_image.dart';
 
+import 'package:string_validator/string_validator.dart';
+
 class Size {
   late final double height;
   late final double width;
@@ -116,10 +118,7 @@ class UnsupportedDialog extends StatelessWidget {
 
 class ContentPage extends StatefulWidget {
   final Preferences preferences;
-  final Stream<content.Context> context;
-  const ContentPage(
-      {Key? key, required this.preferences, required this.context})
-      : super(key: key);
+  const ContentPage({Key? key, required this.preferences}) : super(key: key);
 
   @override
   State<StatefulWidget> createState() => ContentState();
@@ -171,9 +170,9 @@ class ContentPageItemState extends State<ContentPageItem> {
     content.ItemType.unsupported: (String path, Preferences preferences) =>
         defaultImage,
     content.ItemType.image: (String path, Preferences preferences) => Image.network(
-        '$protocol://$ip:$port/icon/$path/?width=${preferences.itemSize.width}&height=${preferences.itemSize.height}'),
+        '$protocol://${content.SERVER_IP}:$port/icon/$path/?width=${preferences.itemSize.width}&height=${preferences.itemSize.height}'),
     content.ItemType.video: (String path, Preferences preferences) => Image.network(
-        '$protocol://$ip:$port/icon/$path/?width=${preferences.itemSize.width}&height=${preferences.itemSize.height}')
+        '$protocol://${content.SERVER_IP}:$port/icon/$path/?width=${preferences.itemSize.width}&height=${preferences.itemSize.height}')
   };
 
   Widget base(content.Item item) {
@@ -201,7 +200,7 @@ class ContentPageItemState extends State<ContentPageItem> {
                           context: context,
                           builder: (context) => PlayVideoDialog(
                                 url:
-                                    '$protocol://$ip:$port/file/${widget.item.path}/',
+                                    '$protocol://${content.SERVER_IP}:$port/file/${widget.item.path}/',
                               ));
                       break;
                     }
@@ -211,7 +210,7 @@ class ContentPageItemState extends State<ContentPageItem> {
                           context: context,
                           builder: (context) => ImageDialog(
                                 url:
-                                    '$protocol://$ip:$port/file/${widget.item.path}/',
+                                    '$protocol://${content.SERVER_IP}:$port/file/${widget.item.path}/',
                                 title: widget.item.title,
                               ));
                       break;
@@ -283,12 +282,19 @@ class SelectedIndexes {
 
 class ContentState extends State<ContentPage> {
   content.Context? _contentContext;
+  StreamSubscription? subscription;
   final _selectedItems = SelectedIndexes();
   int _count = 0;
 
+  @override
+  void dispose() {
+    subscription?.cancel();
+    super.dispose();
+  }
+
   void _bindContext(content.Context event) {
     setState(() => _contentContext = event);
-    event.size.listen((event) {
+    subscription = event.size.listen((event) {
       setState(() {
         _count = event;
       });
@@ -335,7 +341,7 @@ class ContentState extends State<ContentPage> {
             _contentContext?.getItem(i).then((item) async {
               final response = await get(Uri(
                   scheme: protocol,
-                  host: ip,
+                  host: content.SERVER_IP,
                   port: port,
                   path: 'file/${item.path}/'));
 
@@ -373,7 +379,9 @@ class ContentState extends State<ContentPage> {
   @override
   Widget build(BuildContext context) {
     if (_contentContext == null) {
-      widget.context.listen(_bindContext);
+      _contentContext ??= content.ContextProvider(content.SERVER_IP)
+          .getContext(content.SERVER_IP, "home");
+      _bindContext(_contentContext!);
     }
     return StreamBuilder<bool>(
         stream: _selectedItems.isNotEmpty,
@@ -388,7 +396,6 @@ class ContentState extends State<ContentPage> {
   }
 }
 
-const String ip = '192.168.0.105';
 const int port = 44341;
 const String protocol = 'http';
 final defaultImage = Image.asset('images/file.png');
@@ -408,7 +415,12 @@ class UploadFileDialogState extends State<UploadFileDialog> {
 
   void _sendFile() {
     var request = MultipartRequest(
-        "POST", Uri(scheme: protocol, host: ip, port: port, path: 'file'));
+        "POST",
+        Uri(
+            scheme: protocol,
+            host: content.SERVER_IP,
+            port: port,
+            path: 'file'));
     for (var file in _files) {
       var value =
           MultipartFile.fromBytes('files', file.bytes!, filename: file.name);
@@ -432,12 +444,8 @@ class UploadFileDialogState extends State<UploadFileDialog> {
   }
 
   Widget _selectFileButton() {
-    return TextButton(
-      style: TextButton.styleFrom(
-          padding: const EdgeInsets.all(16.0),
-          primary: Colors.white,
-          textStyle: const TextStyle(fontSize: 20),
-          backgroundColor: Colors.lightBlue),
+    return Expanded(
+        child: FloatingActionButton(
       onPressed: () => FilePicker.platform
           .pickFiles(allowMultiple: true, withData: true)
           .then((value) => {
@@ -446,8 +454,8 @@ class UploadFileDialogState extends State<UploadFileDialog> {
                     setState(() => {(_files = value.files)})
                   }
               }),
-      child: const Text('Select files to upload'),
-    );
+      child: Icon(Icons.drive_file_move),
+    ));
   }
 
   Image _imageForItem(PlatformFile file) {
@@ -513,34 +521,90 @@ class UploadFileDialogState extends State<UploadFileDialog> {
 
 class Scaff extends StatelessWidget {
   final Preferences preferences;
-  final StreamController<content.Context> contextController;
-  const Scaff(
-      {Key? key, required this.preferences, required this.contextController})
-      : super(key: key);
+  const Scaff({Key? key, required this.preferences}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
         backgroundColor: Colors.white,
-        body: ContentPage(
-            preferences: preferences, context: contextController.stream),
+        body: ContentPage(preferences: preferences),
         floatingActionButton: FloatingActionButton(
             onPressed: () => showDialog(
                 context: context,
                 builder: (context) => UploadFileDialog(
                       preferences: preferences,
-                    ))));
+                    )),
+            child: const Icon(Icons.upload_file)));
+  }
+}
+
+class EnterIP extends StatefulWidget {
+  const EnterIP({super.key, required this.preferences});
+  final Preferences preferences;
+
+  @override
+  State<EnterIP> createState() => EnterIPState();
+}
+
+class EnterIPState extends State<EnterIP> {
+  final _ipController = TextEditingController()..text = "192.168.0.";
+  bool _buttonEnabled = false;
+
+  @override
+  void dispose() {
+    _ipController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Start listening to changes.
+    _ipController.addListener(() {
+      setState(() {
+        _buttonEnabled = isIP(_ipController.text);
+      });
+      content.SERVER_IP = _ipController.text;
+    });
+  }
+
+  void navigateOnHTTPSuckass(
+      BuildContext context, TextEditingController controller) {
+    String IP = controller.text;
+    Socket.connect(IP, port, timeout: Duration(seconds: 2)).then((socket) {
+      Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: ((context) =>
+                  SafeArea(child: Scaff(preferences: widget.preferences)))));
+      socket.destroy();
+    }).catchError((error) {
+      showDialog(
+          context: context,
+          builder: ((context) =>
+              AlertDialog(title: const Text('Server timeout'))));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final button = FloatingActionButton(
+        onPressed: _buttonEnabled
+            ? () => navigateOnHTTPSuckass(context, _ipController)
+            : null,
+        child: const Icon(Icons.login));
+    return Scaffold(
+        backgroundColor: Colors.white,
+        body: ListView(children: [TextField(controller: _ipController)]),
+        floatingActionButton: button);
   }
 }
 
 void main() async {
   var preferences = Preferences(Size(150, 150));
-  final contextController = StreamController<content.Context>();
-  contextController.add(content.ContextProvider().getContext("home"));
   runApp(MaterialApp(
     title: "Whatever cloud",
-    home: SafeArea(
-        child: Scaff(
-            preferences: preferences, contextController: contextController)),
+    home: SafeArea(child: EnterIP(preferences: preferences)),
   ));
 }
